@@ -56,7 +56,7 @@
         .file-upload-btn:hover {
             background: #2a2a2a;
         }
-        /* Панель експорту (з'являється після завантаження) */
+        /* Панель експорту внизу */
         .ui-panel {
             position: absolute;
             bottom: 25px;
@@ -135,7 +135,7 @@
     <script>
         const container = document.getElementById('canvas-container');
         const scene = new THREE.Scene();
-        scene.background = null; // Жодних площин чи сіток на фоні
+        scene.background = null; // Жодних фонових сіток чи площин
 
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -155,7 +155,7 @@
         const modelGroup = new THREE.Group();
         scene.add(modelGroup);
 
-        // Генерація повноцінної об'ємної моделі з картинки без пустот і площини
+        // Генерація об'ємної рельєфної 3D-моделі за допомогою прямокутних блоків (зберігає форму без круглих куль)
         function generate3DFromImage(img) {
             while(modelGroup.children.length > 0){ 
                 modelGroup.remove(modelGroup.children[0]); 
@@ -163,20 +163,22 @@
 
             const canvas2D = document.createElement('canvas');
             const ctx = canvas2D.getContext('2d');
-            const res = 40; 
+            const res = 50; // Висока деталізація
             canvas2D.width = res;
             canvas2D.height = res;
             ctx.drawImage(img, 0, 0, res, res);
             const imgData = ctx.getImageData(0, 0, res, res).data;
 
-            const geoCache = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+            // Використовуємо паралелепіпеди (блоки), щоб форма була чіткою та повноцінно об'ємною
+            const geoCache = new THREE.BoxGeometry(0.12, 0.12, 0.3);
 
             for (let y = 0; y < res; y++) {
                 for (let x = 0; x < res; x++) {
                     const i = (y * res + x) * 4;
                     const r = imgData[i], g = imgData[i+1], b = imgData[i+2], a = imgData[i+3];
 
-                    if (a < 50 || (r > 235 && g > 235 && b > 235)) continue;
+                    // Відсікаємо білий або прозорий фон
+                    if (a < 40 || (r > 240 && g > 240 && b > 240)) continue;
 
                     const hexColor = (r << 16) | (g << 8) | b;
                     const material = new THREE.MeshStandardMaterial({ 
@@ -184,31 +186,26 @@
                         roughness: 0.4 
                     });
 
-                    // Заповнюємо об'єм у глибину
-                    const depthLayers = 4;
-                    for (let z = 0; z < depthLayers; z++) {
-                        const mesh = new THREE.Mesh(geoCache, material);
-                        
-                        const posX = (x - res / 2) * 0.14;
-                        const posY = (y - res / 2) * 0.14;
-                        const posZ = (z - depthLayers / 2) * 0.14 + ((255 - (r+g+b)/3) / 100);
+                    const mesh = new THREE.Mesh(geoCache, material);
+                    
+                    const posX = (x - res / 2) * 0.12;
+                    const posY = (y - res / 2) * 0.12;
+                    const posZ = (255 - (r + g + b) / 3) / 80; // Рельєфна глибина на основі кольору
 
-                        mesh.position.set(posX, posY, posZ);
-                        modelGroup.add(mesh);
-                    }
+                    mesh.position.set(posX, posY, posZ);
+                    modelGroup.add(mesh);
                 }
             }
 
-            // Перевертаємо догори ногами
+            // Перевертаємо модель догори ногами за запитом
             modelGroup.rotation.x = Math.PI;
         }
 
-        // Обробник завантаження файлу
+        // Обробник вибору файлу
         document.getElementById('imageLoader').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Ховаємо початкове вікно вибору, показуємо результат і панель експорту
             document.getElementById('welcomeScreen').style.display = 'none';
             document.getElementById('uiPanel').style.display = 'flex';
             document.getElementById('instructions').style.display = 'block';
@@ -260,6 +257,7 @@
         }
         animate();
 
+        // Експорт у STL та GLB
         function download(blob, name) {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
