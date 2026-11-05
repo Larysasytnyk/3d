@@ -1,8 +1,3 @@
-Ось повністю готовий код для вашого конвертера. Я залишив вашу панель завантаження зліва, повністю **прибрав усю сітку та плоску підложку на фоні**, зробив модель **повноцінно об'ємною з усіх боків** (а не просто плоским витисненням піксерів уперед) і **перевернув її догори ногами** відповідно до вашого запиту.
-
-Скопіюйте цей код і збережіть у свій файл:
-
-```html
 <!DOCTYPE html>
 <html lang="uk">
 <head>
@@ -21,26 +16,26 @@
             height: 100vh;
             display: block;
         }
-        .control-panel {
+        /* Центроване початкове вікно вибору */
+        .welcome-screen {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(20, 20, 20, 0.85);
-            padding: 20px;
-            border-radius: 14px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(20, 20, 20, 0.9);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.7);
             color: #fff;
-            z-index: 10;
-            width: 300px;
+            z-index: 20;
+            backdrop-filter: blur(10px);
+            width: 340px;
         }
-        .control-panel h3 {
+        .welcome-screen h2 {
             margin-top: 0;
-            font-size: 16px;
             color: #4361ee;
-        }
-        .file-input-wrapper {
-            margin-bottom: 15px;
+            font-size: 20px;
         }
         .file-input-wrapper input[type="file"] {
             display: none;
@@ -49,22 +44,25 @@
             display: block;
             background: #222;
             border: 2px dashed #4361ee;
-            padding: 12px;
+            padding: 16px;
             text-align: center;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 14px;
+            color: #fff;
             transition: background 0.2s;
+            margin-top: 20px;
         }
         .file-upload-btn:hover {
             background: #2a2a2a;
         }
+        /* Панель експорту (з'являється після завантаження) */
         .ui-panel {
             position: absolute;
             bottom: 25px;
             left: 50%;
             transform: translateX(-50%);
-            display: flex;
+            display: none;
             gap: 12px;
             background: rgba(20, 20, 20, 0.75);
             padding: 12px 24px;
@@ -98,30 +96,33 @@
             pointer-events: none;
             font-size: 13px;
             line-height: 1.6;
+            display: none;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
 
-    <div class="control-panel">
-        <h3>3D Об'ємний Конвертер</h3>
+    <!-- Початкове чисте вікно вибору файлу -->
+    <div class="welcome-screen" id="welcomeScreen">
+        <h2>3D Об'ємний Конвертер</h2>
+        <p style="color: #aaa; font-size: 13px;">Перетворіть зображення на повноцінну 3D модель</p>
         <div class="file-input-wrapper">
             <label class="file-upload-btn">
                 📁 Оберіть або перетягніть файл
                 <input type="file" id="imageLoader" accept="image/*">
             </label>
         </div>
-        <div id="file-name" style="font-size: 12px; color: #aaa; word-break: break-all;">Файл не вибрано</div>
     </div>
 
-    <div class="instructions">
+    <div class="instructions" id="instructions">
         🖱️ <b>Обертання:</b> затисніть ліву кнопку миші та тягніть<br>
         ⚙️ <b>Масштабування:</b> коліщатко миші
     </div>
 
     <div id="canvas-container"></div>
 
-    <div class="ui-panel">
+    <div class="ui-panel" id="uiPanel">
         <button class="ui-btn" id="export-stl">Завантажити STL</button>
         <button class="ui-btn" id="export-glb">Завантажити GLB</button>
     </div>
@@ -134,7 +135,7 @@
     <script>
         const container = document.getElementById('canvas-container');
         const scene = new THREE.Scene();
-        scene.background = null; // Повністю прозорий фон без площин та сіток
+        scene.background = null; // Жодних площин чи сіток на фоні
 
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -142,7 +143,6 @@
         renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
 
-        // Освітлення для об'єму
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
         dirLight.position.set(10, 20, 15);
@@ -155,7 +155,7 @@
         const modelGroup = new THREE.Group();
         scene.add(modelGroup);
 
-        // Функція перетворення плоского зображення на повноцінну об'ємну 3D-модель
+        // Генерація повноцінної об'ємної моделі з картинки без пустот і площини
         function generate3DFromImage(img) {
             while(modelGroup.children.length > 0){ 
                 modelGroup.remove(modelGroup.children[0]); 
@@ -163,61 +163,56 @@
 
             const canvas2D = document.createElement('canvas');
             const ctx = canvas2D.getContext('2d');
-            const res = 30; // Роздільна здатність сітки моделі
+            const res = 40; 
             canvas2D.width = res;
             canvas2D.height = res;
             ctx.drawImage(img, 0, 0, res, res);
             const imgData = ctx.getImageData(0, 0, res, res).data;
 
-            // Використовуємо сфери замість плоских пікселів для реального 3D об'єму
-            const geoCache = new THREE.SphereGeometry(0.18, 16, 16);
+            const geoCache = new THREE.BoxGeometry(0.14, 0.14, 0.14);
 
             for (let y = 0; y < res; y++) {
                 for (let x = 0; x < res; x++) {
                     const i = (y * res + x) * 4;
                     const r = imgData[i], g = imgData[i+1], b = imgData[i+2], a = imgData[i+3];
 
-                    if (a < 40 || (r > 240 && g > 240 && b > 240)) continue;
+                    if (a < 50 || (r > 235 && g > 235 && b > 235)) continue;
 
                     const hexColor = (r << 16) | (g << 8) | b;
                     const material = new THREE.MeshStandardMaterial({ 
                         color: hexColor, 
-                        roughness: 0.35,
-                        metalness: 0.1
+                        roughness: 0.4 
                     });
 
-                    const mesh = new THREE.Mesh(geoCache, material);
-                    
-                    // Розподіляємо координати так, щоб модель була об'ємною з усіх боків
-                    const posX = (x - res / 2) * 0.12;
-                    const posY = (y - res / 2) * 0.12;
-                    const posZ = Math.sin((x / res) * Math.PI) * Math.sin((y / res) * Math.PI) * 0.8 + ((r+g+b)/700);
+                    // Заповнюємо об'єм у глибину
+                    const depthLayers = 4;
+                    for (let z = 0; z < depthLayers; z++) {
+                        const mesh = new THREE.Mesh(geoCache, material);
+                        
+                        const posX = (x - res / 2) * 0.14;
+                        const posY = (y - res / 2) * 0.14;
+                        const posZ = (z - depthLayers / 2) * 0.14 + ((255 - (r+g+b)/3) / 100);
 
-                    mesh.position.set(posX, posY, posZ);
-                    modelGroup.add(mesh);
+                        mesh.position.set(posX, posY, posZ);
+                        modelGroup.add(mesh);
+                    }
                 }
             }
 
-            // ПОВОРОТ ДОГОРИ НОГАМИ (на 180 градусів по осях)
+            // Перевертаємо догори ногами
             modelGroup.rotation.x = Math.PI;
-            modelGroup.rotation.z = Math.PI;
         }
 
-        // Початкова демо-модель, якщо файл ще не завантажено
-        const defMat = new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.4 });
-        for(let i = 0; i < 200; i++) {
-            const m = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), defMat);
-            m.position.set((Math.random()-0.5)*3, (Math.random()-0.5)*3, (Math.random()-0.5)*1.5);
-            modelGroup.add(m);
-        }
-        modelGroup.rotation.x = Math.PI;
-        modelGroup.rotation.z = Math.PI;
-
-        // Подія завантаження користувацького зображення
+        // Обробник завантаження файлу
         document.getElementById('imageLoader').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            document.getElementById('file-name').innerText = file.name;
+
+            // Ховаємо початкове вікно вибору, показуємо результат і панель експорту
+            document.getElementById('welcomeScreen').style.display = 'none';
+            document.getElementById('uiPanel').style.display = 'flex';
+            document.getElementById('instructions').style.display = 'block';
+
             const reader = new FileReader();
             reader.onload = function(event) {
                 const img = new Image();
@@ -229,7 +224,7 @@
             reader.readAsDataURL(file);
         });
 
-        // Керування камерою (обертання мишею та зум)
+        // Керування камерою (миша та зум)
         let isDragging = false, prevMouse = { x: 0, y: 0 };
         let radius = 6.0, theta = Math.PI / 4, phi = Math.PI / 3;
 
@@ -265,7 +260,6 @@
         }
         animate();
 
-        // Експорт у формати STL та GLB
         function download(blob, name) {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
@@ -284,5 +278,3 @@
     </script>
 </body>
 </html>
-
-```
