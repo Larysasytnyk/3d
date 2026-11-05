@@ -168,7 +168,7 @@
         dirLight.position.set(10, 20, 15);
         scene.add(dirLight);
 
-        // Початкова фонова сітка (як на вашому скріншоті очікування)
+        // Початкова сітка (зникає після завантаження)
         const gridHelper = new THREE.GridHelper(30, 30, 0x4f46e5, 0x1e293b);
         gridHelper.position.y = -3;
         scene.add(gridHelper);
@@ -182,70 +182,62 @@
         const depthVal = document.getElementById('depthVal');
         depthSlider.addEventListener('input', (e) => {
             depthVal.innerText = e.target.value;
-            if (currentImage) generateSolid3D(currentImage);
+            if (currentImage) generateDiscreteVoxels(currentImage);
         });
 
-        // Функція побудови повноцінної об'ємної моделі БЕЗ точок і сіток (гладка поверхня)
-        function generateSolid3D(img) {
+        // Побудова ідеальних дискретних кубиків-точок із реальним об'ємом у глибину
+        function generateDiscreteVoxels(img) {
             while(modelGroup.children.length > 0){ 
                 modelGroup.remove(modelGroup.children[0]); 
             }
 
-            // Ховаємо фонову сітку після завантаження моделі, як ви просили
-            gridHelper.visible = false;
+            gridHelper.visible = false; // прибираємо сітку
 
             const canvas2D = document.createElement('canvas');
             const ctx = canvas2D.getContext('2d');
-            const res = 60; // Висока роздільна здатність для гладкої поверхні
+            const res = 50; // Чітка деталізація вокселів
             canvas2D.width = res;
             canvas2D.height = res;
             ctx.drawImage(img, 0, 0, res, res);
             const imgData = ctx.getImageData(0, 0, res, res).data;
 
-            const maxDepth = parseInt(depthSlider.value) / 25;
+            const maxDepth = parseInt(depthSlider.value);
+            // Робимо кубики трохи меншими з проміжками, щоб чітко бачити структуру точок
+            const boxGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
 
-            // Створюємо єдину гладку об'ємну геометрію замість розрізнених точок
-            const geometry = new THREE.PlaneGeometry(5, 5, res - 1, res - 1);
-            const positions = geometry.attributes.position;
+            for (let y = 0; y < res; y++) {
+                for (let x = 0; x < res; x++) {
+                    const i = (y * res + x) * 4;
+                    const r = imgData[i], g = imgData[i+1], b = imgData[i+2], a = imgData[i+3];
 
-            for (let i = 0; i < positions.count; i++) {
-                const x = i % res;
-                const y = Math.floor(i / res);
-                const dataIndex = (y * res + x) * 4;
-                
-                const r = imgData[dataIndex];
-                const g = imgData[dataIndex+1];
-                const b = imgData[dataIndex+2];
-                const a = imgData[dataIndex+3];
+                    if (a < 40 || (r > 235 && g > 235 && b > 235)) continue;
 
-                if (a < 40 || (r > 235 && g > 235 && b > 235)) {
-                    positions.setZ(i, -2); // Ховаємо пустий фон
-                } else {
-                    // Формуємо об'ємну висоту на основі яскравості пікселя
-                    const brightness = (r + g + b) / 3;
-                    positions.setZ(i, (255 - brightness) / 255 * maxDepth);
+                    const hexColor = (r << 16) | (g << 8) | b;
+                    const material = new THREE.MeshStandardMaterial({ 
+                        color: hexColor, 
+                        roughness: 0.35 
+                    });
+
+                    // Кількість шарів у глибину залежить від повзунка товщини
+                    const depthLayers = Math.max(3, Math.floor(maxDepth / 4));
+                    for (let z = 0; z < depthLayers; z++) {
+                        const mesh = new THREE.Mesh(boxGeo, material);
+                        
+                        const posX = (x - res / 2) * 0.11;
+                        const posY = (y - res / 2) * 0.11;
+                        const posZ = (z - depthLayers / 2) * 0.11;
+
+                        mesh.position.set(posX, posY, posZ);
+                        modelGroup.add(mesh);
+                    }
                 }
             }
 
-            geometry.computeVertexNormals();
-
-            // Матеріал без точок та сіток
-            const material = new THREE.MeshStandardMaterial({ 
-                color: 0x52b788, 
-                roughness: 0.3,
-                metalness: 0.1,
-                side: THREE.DoubleSide
-            });
-
-            const mesh = new THREE.Mesh(geometry, material);
-            modelGroup.add(mesh);
-
-            // Нормальне положення (не догори ногами)
+            // Рівне нормальне положення
             modelGroup.rotation.x = 0;
             modelGroup.rotation.z = 0;
         }
 
-        // Завантаження файлу
         document.getElementById('imageLoader').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -257,16 +249,16 @@
                 const img = new Image();
                 img.onload = function() {
                     currentImage = img;
-                    generateSolid3D(img);
+                    generateDiscreteVoxels(img);
                 }
                 img.src = event.target.result;
             }
             reader.readAsDataURL(file);
         });
 
-        // Керування камерою (миша та зум)
+        // Керування камерою
         let isDragging = false, prevMouse = { x: 0, y: 0 };
-        let radius = 7.0, theta = 0, phi = Math.PI / 3;
+        let radius = 6.0, theta = 0, phi = Math.PI / 3;
 
         function updateCam() {
             phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
@@ -290,7 +282,7 @@
         window.addEventListener('mouseup', () => isDragging = false);
         window.addEventListener('wheel', e => {
             e.preventDefault();
-            radius = Math.max(3.0, Math.min(20.0, radius + e.deltaY * 0.005));
+            radius = Math.max(2.0, Math.min(15.0, radius + e.deltaY * 0.005));
             updateCam();
         }, { passive: false });
 
