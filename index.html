@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Об'ємний Конвертер</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0b0b0b;
+            font-family: Arial, sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 20, 0.85);
+            padding: 20px;
+            border-radius: 14px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            color: #fff;
+            z-index: 10;
+            width: 300px;
+        }
+        .control-panel h3 {
+            margin-top: 0;
+            font-size: 16px;
+            color: #4361ee;
+        }
+        .file-input-wrapper {
+            margin-bottom: 15px;
+        }
+        .file-input-wrapper input[type="file"] {
+            display: none;
+        }
+        .file-upload-btn {
+            display: block;
+            background: #222;
+            border: 2px dashed #4361ee;
+            padding: 12px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .file-upload-btn:hover {
+            background: #2a2a2a;
+        }
+        .ui-panel {
+            position: absolute;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            background: rgba(20, 20, 20, 0.75);
+            padding: 12px 24px;
+            border-radius: 14px;
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+        .ui-btn {
+            background-color: #4361ee;
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .ui-btn:hover {
+            background-color: #3a0ca3;
+            transform: translateY(-2px);
+        }
+        .instructions {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #ccc;
+            background: rgba(20, 20, 20, 0.7);
+            padding: 12px 18px;
+            border-radius: 10px;
+            pointer-events: none;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="control-panel">
+        <h3>3D Об'ємний Конвертер</h3>
+        <div class="file-input-wrapper">
+            <label class="file-upload-btn">
+                📁 Оберіть або перетягніть файл
+                <input type="file" id="imageLoader" accept="image/*">
+            </label>
+        </div>
+        <div id="file-name" style="font-size: 12px; color: #aaa; word-break: break-all;">Файл не вибрано</div>
+    </div>
+
+    <div class="instructions">
+        🖱️ <b>Обертання:</b> затисніть ліву кнопку миші та тягніть<br>
+        ⚙️ <b>Масштабування:</b> коліщатко миші
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div class="ui-panel">
+        <button class="ui-btn" id="export-stl">Завантажити STL</button>
+        <button class="ui-btn" id="export-glb">Завантажити GLB</button>
+    </div>
+
+    <!-- Three.js та експортери через CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/STLExporter.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+
+    <script>
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = null;
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        dirLight.position.set(10, 20, 15);
+        scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0x8ecae6, 0.4);
+        fillLight.position.set(-10, -10, -10);
+        scene.add(fillLight);
+
+        const modelGroup = new THREE.Group();
+        scene.add(modelGroup);
+
+        function build3DModel(texture = null) {
+            while(modelGroup.children.length > 0){ 
+                modelGroup.remove(modelGroup.children[0]); 
+            }
+
+            const materialOpts = texture ? { map: texture, roughness: 0.4 } : { color: 0x52b788, roughness: 0.4 };
+            const clayMaterial = new THREE.MeshStandardMaterial(materialOpts);
+            const accentMaterial = new THREE.MeshStandardMaterial({ color: 0x74c69d, roughness: 0.5 });
+            const darkCoreMaterial = new THREE.MeshStandardMaterial({ color: 0x1b4332, roughness: 0.3 });
+
+            // Повністю об'ємне основне тіло
+            const bodyGeo = new THREE.SphereGeometry(1.2, 32, 32);
+            bodyGeo.scale(1.4, 0.9, 0.9);
+            modelGroup.add(new THREE.Mesh(bodyGeo, clayMaterial));
+
+            // Внутрішнє ядро
+            const innerGeo = new THREE.SphereGeometry(1.0, 32, 32);
+            innerGeo.scale(1.2, 0.75, 0.75);
+            const innerBody = new THREE.Mesh(innerGeo, accentMaterial);
+            innerBody.position.set(0, 0.05, 0.05);
+            modelGroup.add(innerBody);
+
+            // Органели
+            [{ pos: [-0.4, 0.3, 0.5], scale: 0.35, mat: clayMaterial },
+             { pos: [0.3, 0.4, 0.4], scale: 0.25, mat: accentMaterial },
+             { pos: [0.5, -0.1, 0.5], scale: 0.3, mat: clayMaterial },
+             { pos: [-0.1, -0.4, 0.6], scale: 0.45, mat: darkCoreMaterial }].forEach(item => {
+                const org = new THREE.Mesh(new THREE.SphereGeometry(item.scale, 24, 24), item.mat);
+                org.position.set(...item.pos);
+                modelGroup.add(org);
+            });
+
+            // Джгутики по периметру
+            for (let i = 0; i < 18; i++) {
+                const angle = (i / 18) * Math.PI * 2;
+                const spike = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.5, 16), clayMaterial);
+                spike.position.set(Math.cos(angle) * 1.35, Math.sin(angle) * 1.35 * 0.7, 0);
+                spike.rotation.z = angle - Math.PI / 2;
+                modelGroup.add(spike);
+            }
+
+            // Поворот догори ногами (на 180 градусів)
+            modelGroup.rotation.x = Math.PI;
+        }
+
+        build3DModel();
+
+        document.getElementById('imageLoader').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('file-name').innerText = file.name;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const texture = new THREE.Texture(img);
+                    texture.needsUpdate = true;
+                    build3DModel(texture);
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        let isDragging = false, prevMouse = { x: 0, y: 0 };
+        let radius = 5.0, theta = Math.PI / 4, phi = Math.PI / 3;
+
+        function updateCam() {
+            phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi));
+            camera.position.set(
+                radius * Math.sin(phi) * Math.sin(theta),
+                radius * Math.cos(phi),
+                radius * Math.sin(phi) * Math.cos(theta)
+            );
+            camera.lookAt(0, 0, 0);
+        }
+        updateCam();
+
+        window.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+        window.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            theta -= (e.clientX - prevMouse.x) * 0.005;
+            phi -= (e.clientY - prevMouse.y) * 0.005;
+            updateCam();
+            prevMouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseup', () => isDragging = false);
+        window.addEventListener('wheel', e => {
+            e.preventDefault();
+            radius = Math.max(2.0, Math.min(12.0, radius + e.deltaY * 0.005));
+            updateCam();
+        }, { passive: false });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        function download(blob, name) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = name;
+            link.click();
+        }
+
+        document.getElementById('export-stl').onclick = () => {
+            download(new Blob([new THREE.STLExporter().parse(modelGroup, { binary: true })], { type: 'application/octet-stream' }), 'model.stl');
+        };
+        document.getElementById('export-glb').onclick = () => {
+            new THREE.GLTFExporter().parse(modelGroup, gltf => {
+                download(new Blob([gltf], { type: 'application/octet-stream' }), 'model.glb');
+            }, { binary: true });
+        };
+    </script>
+</body>
+</html>
